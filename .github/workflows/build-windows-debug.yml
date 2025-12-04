@@ -29,45 +29,56 @@ jobs:
         New-Item -ItemType Directory -Force -Path "poppler_bin"
         Copy-Item -Path "$($popplerBin.FullName)\*" -Destination "poppler_bin" -Force
         
-    - name: Modify main.py for debugging
+    - name: Create modified main.py
       shell: pwsh
       run: |
-        $hookCode = @'
+        # オリジナルをバックアップ
+        Copy-Item "main.py" "main_backup.py"
+        
+        # デバッグコードを作成
+        $debugCode = @"
 import os
 import sys
 
-print("="*60)
-print("[DEBUG] Starting application...")
+print('='*60)
+print('[DEBUG] Starting application...')
 
 if getattr(sys, 'frozen', False):
     application_path = sys._MEIPASS
-    print(f"[DEBUG] Running as EXE, temp path: {application_path}")
+    print(f'[DEBUG] Running as EXE, temp path: {application_path}')
     
     poppler_path = os.path.join(application_path, 'poppler_bin')
-    print(f"[DEBUG] Looking for Poppler at: {poppler_path}")
+    print(f'[DEBUG] Looking for Poppler at: {poppler_path}')
     
     if os.path.exists(poppler_path):
-        print(f"[DEBUG] ✓ Poppler directory found!")
-        print(f"[DEBUG] Files in poppler_bin:")
+        print('[DEBUG] Poppler directory found!')
+        print('[DEBUG] Files in poppler_bin:')
         for f in os.listdir(poppler_path):
-            print(f"[DEBUG]   - {f}")
+            print(f'[DEBUG]   - {f}')
         
         os.environ['PATH'] = poppler_path + os.pathsep + os.environ.get('PATH', '')
-        print(f"[DEBUG] ✓ Poppler added to PATH")
+        print('[DEBUG] Poppler added to PATH')
     else:
-        print(f"[DEBUG] ✗ Poppler directory NOT found!")
-        print(f"[DEBUG] Available directories:")
-        for item in os.listdir(application_path):
-            print(f"[DEBUG]   - {item}")
+        print('[DEBUG] ERROR: Poppler directory NOT found!')
+        print('[DEBUG] Available directories:')
+        try:
+            for item in os.listdir(application_path):
+                print(f'[DEBUG]   - {item}')
+        except Exception as e:
+            print(f'[DEBUG] Error listing directory: {e}')
 else:
-    print("[DEBUG] Running in development mode")
+    print('[DEBUG] Running in development mode')
 
-print("="*60)
+print('='*60)
 
-'@
-        $mainContent = Get-Content "main.py" -Raw
-        $newContent = $hookCode + "`n" + $mainContent
-        $newContent | Out-File -FilePath "main.py" -Encoding UTF8
+"@
+        
+        # main.pyの内容を読み込んで結合
+        $mainContent = Get-Content "main.py" -Raw -Encoding UTF8
+        $newContent = $debugCode + "`n" + $mainContent
+        
+        # 新しいmain.pyを書き出し
+        $newContent | Out-File -FilePath "main.py" -Encoding UTF8 -NoNewline
         
     - name: Build Debug EXE
       shell: pwsh
@@ -86,6 +97,11 @@ print("="*60)
           --collect-all pdf2image `
           --collect-all PIL `
           main.py
+        
+    - name: Restore original main.py
+      shell: pwsh
+      run: |
+        Copy-Item "main_backup.py" "main.py" -Force
         
     - uses: actions/upload-artifact@v4
       with:

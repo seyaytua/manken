@@ -26,53 +26,32 @@ jobs:
     - name: Setup Poppler
       shell: pwsh
       run: |
-        Write-Host "=== Downloading Poppler ==="
         Invoke-WebRequest -Uri "https://github.com/oschwartz10612/poppler-windows/releases/download/v23.11.0-0/Release-23.11.0-0.zip" -OutFile poppler.zip
-        
-        Write-Host "=== Extracting Poppler ==="
         Expand-Archive poppler.zip -DestinationPath poppler-temp
-        
-        Write-Host "=== Finding Poppler bin directory ==="
         $popplerBin = Get-ChildItem -Path "poppler-temp" -Filter "bin" -Recurse -Directory | Select-Object -First 1
-        Write-Host "Found at: $($popplerBin.FullName)"
-        
-        Write-Host "=== Copying Poppler files ==="
         New-Item -ItemType Directory -Force -Path "poppler_bin"
         Copy-Item -Path "$($popplerBin.FullName)\*" -Destination "poppler_bin" -Force
         
-        Write-Host "=== Poppler files copied ==="
-        Get-ChildItem "poppler_bin" | ForEach-Object { Write-Host "  $($_.Name)" }
-        
-    - name: Modify main.py to include Poppler path
+    - name: Create modified main.py
       shell: pwsh
       run: |
-        $hookCode = @'
+        Copy-Item "main.py" "main_backup.py"
+        
+        $popplerCode = @"
 import os
 import sys
 
-# Add Poppler to PATH at the very start
 if getattr(sys, 'frozen', False):
-    # Running as compiled executable
     application_path = sys._MEIPASS
     poppler_path = os.path.join(application_path, 'poppler_bin')
-    
     if os.path.exists(poppler_path):
-        # Add to PATH
         os.environ['PATH'] = poppler_path + os.pathsep + os.environ.get('PATH', '')
-        print(f"[DEBUG] Poppler path added: {poppler_path}")
-        print(f"[DEBUG] Files in poppler_bin: {os.listdir(poppler_path)}")
-    else:
-        print(f"[DEBUG] ERROR: Poppler path not found: {poppler_path}")
-        print(f"[DEBUG] Available paths: {os.listdir(application_path)}")
-else:
-    print("[DEBUG] Running in development mode")
 
-'@
+"@
         
-        # main.pyの先頭に追加
-        $mainContent = Get-Content "main.py" -Raw
-        $newContent = $hookCode + "`n" + $mainContent
-        $newContent | Out-File -FilePath "main.py" -Encoding UTF8
+        $mainContent = Get-Content "main.py" -Raw -Encoding UTF8
+        $newContent = $popplerCode + "`n" + $mainContent
+        $newContent | Out-File -FilePath "main.py" -Encoding UTF8 -NoNewline
         
     - name: Build EXE
       shell: pwsh
@@ -92,14 +71,19 @@ else:
           --collect-all PIL `
           main.py
         
+    - name: Restore original main.py
+      shell: pwsh
+      run: |
+        Copy-Item "main_backup.py" "main.py" -Force
+        
     - name: Verify build
       shell: pwsh
       run: |
         if (Test-Path "dist/PDF-Tool-Pro.exe") {
           $size = (Get-Item "dist/PDF-Tool-Pro.exe").Length / 1MB
-          Write-Host "✓ Build successful - Size: $([math]::Round($size, 2)) MB"
+          Write-Host "Build successful - Size: $([math]::Round($size, 2)) MB"
         } else {
-          Write-Host "✗ Build failed"
+          Write-Host "Build failed"
           exit 1
         }
         
