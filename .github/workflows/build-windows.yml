@@ -1,12 +1,9 @@
-name: Build Windows Executable
+name: Build Windows EXE
 
 on:
   push:
     branches: [ main ]
-    tags:
-      - 'v*'
-  pull_request:
-    branches: [ main ]
+    tags: [ 'v*' ]
   workflow_dispatch:
 
 jobs:
@@ -14,63 +11,122 @@ jobs:
     runs-on: windows-latest
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
       
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    - uses: actions/setup-python@v5
       with:
         python-version: '3.11'
         
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
+        pip install --upgrade pip
         pip install -r requirements.txt
         pip install pyinstaller
         
-    - name: Download and setup Poppler
+    - name: Setup Poppler
+      shell: pwsh
       run: |
         # Popplerをダウンロード
-        $popplerUrl = "https://github.com/oschwartz10612/poppler-windows/releases/download/v23.11.0-0/Release-23.11.0-0.zip"
-        Invoke-WebRequest -Uri $popplerUrl -OutFile poppler.zip
+        Invoke-WebRequest -Uri "https://github.com/oschwartz10612/poppler-windows/releases/download/v23.11.0-0/Release-23.11.0-0.zip" -OutFile poppler.zip
+        Expand-Archive poppler.zip -DestinationPath poppler
         
-        # 解凍
-        Expand-Archive -Path poppler.zip -DestinationPath poppler -Force
+        # binフォルダのパスを取得
+        $popplerBin = (Get-ChildItem -Path poppler -Filter bin -Recurse -Directory | Select-Object -First 1).FullName
+        Write-Host "Poppler bin path: $popplerBin"
         
-        # Library\binフォルダを探す
-        $popplerBin = Get-ChildItem -Path "poppler" -Filter "bin" -Recurse -Directory | Select-Object -First 1
-        echo "Poppler bin path: $($popplerBin.FullName)"
+        # 環境変数に設定
+        echo "POPPLER_PATH=$popplerBin" >> $env:GITHUB_ENV
         
-        # 環境変数に追加
-        $env:PATH += ";$($popplerBin.FullName)"
-        echo "PATH=$env:PATH" >> $env:GITHUB_ENV
-        
-    - name: Build executable with PyInstaller
+    - name: Create PyInstaller spec file
+      shell: pwsh
       run: |
-        pyinstaller --name="PDF統合・変換ツールPro" `
-          --windowed `
-          --onefile `
-          --icon=NONE `
-          --add-data="poppler/poppler-23.11.0/Library/bin;poppler/Library/bin" `
-          --hidden-import=PySide6 `
-          --hidden-import=PyPDF2 `
-          --hidden-import=pdf2image `
-          --hidden-import=PIL `
-          --collect-all PySide6 `
-          main.py
-          
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
+        $specContent = @"
+# -*- mode: python ; coding: utf-8 -*-
+
+block_cipher = None
+
+a = Analysis(
+    ['main.py'],
+    pathex=[],
+    binaries=[('$env:POPPLER_PATH', 'poppler/Library/bin')],
+    datas=[],
+    hiddenimports=[
+        'PySide6.QtCore',
+        'PySide6.QtGui',
+        'PySide6.QtWidgets',
+        'PyPDF2',
+        'pdf2image',
+        'PIL',
+        'PIL._imagingtk',
+        'PIL._tkinter_finder',
+        'io',
+        'pathlib',
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    [],
+    name='PDF-Tool-Pro',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=False,
+    disable_windowed_traceback=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon=None,
+)
+"@
+        $specContent | Out-File -FilePath "main.spec" -Encoding UTF8
+        
+    - name: Build EXE with spec file
+      run: |
+        pyinstaller main.spec
+        
+    - name: Test executable (dry run)
+      shell: pwsh
+      run: |
+        Write-Host "Checking if executable was created..."
+        if (Test-Path "dist/PDF-Tool-Pro.exe") {
+          Write-Host "✓ Executable created successfully"
+          $fileSize = (Get-Item "dist/PDF-Tool-Pro.exe").Length / 1MB
+          Write-Host "File size: $([math]::Round($fileSize, 2)) MB"
+        } else {
+          Write-Host "✗ Executable not found!"
+          exit 1
+        }
+        
+    - uses: actions/upload-artifact@v4
       with:
         name: PDF-Tool-Windows
-        path: dist/PDF統合・変換ツールPro.exe
+        path: dist/PDF-Tool-Pro.exe
         
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v2
       with:
-        files: dist/PDF統合・変換ツールPro.exe
+        files: dist/PDF-Tool-Pro.exe
         draft: false
         prerelease: false
+        generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
