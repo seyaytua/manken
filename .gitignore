@@ -37,3 +37,4 @@ Thumbs.db
 
 # PyInstaller
 *.spec
+main_original.py

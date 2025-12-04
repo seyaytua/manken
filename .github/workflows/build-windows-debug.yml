@@ -24,10 +24,50 @@ jobs:
       shell: pwsh
       run: |
         Invoke-WebRequest -Uri "https://github.com/oschwartz10612/poppler-windows/releases/download/v23.11.0-0/Release-23.11.0-0.zip" -OutFile poppler.zip
-        Expand-Archive poppler.zip -DestinationPath poppler
-        $popplerBin = (Get-ChildItem -Path poppler -Filter bin -Recurse -Directory | Select-Object -First 1).FullName
-        Write-Host "Poppler bin path: $popplerBin"
-        Add-Content $env:GITHUB_ENV "POPPLER_PATH=$popplerBin"
+        Expand-Archive poppler.zip -DestinationPath poppler-temp
+        $popplerBin = Get-ChildItem -Path "poppler-temp" -Filter "bin" -Recurse -Directory | Select-Object -First 1
+        New-Item -ItemType Directory -Force -Path "poppler_bin"
+        Copy-Item -Path "$($popplerBin.FullName)\*" -Destination "poppler_bin" -Force
+        
+    - name: Modify main.py for debugging
+      shell: pwsh
+      run: |
+        $hookCode = @'
+import os
+import sys
+
+print("="*60)
+print("[DEBUG] Starting application...")
+
+if getattr(sys, 'frozen', False):
+    application_path = sys._MEIPASS
+    print(f"[DEBUG] Running as EXE, temp path: {application_path}")
+    
+    poppler_path = os.path.join(application_path, 'poppler_bin')
+    print(f"[DEBUG] Looking for Poppler at: {poppler_path}")
+    
+    if os.path.exists(poppler_path):
+        print(f"[DEBUG] ✓ Poppler directory found!")
+        print(f"[DEBUG] Files in poppler_bin:")
+        for f in os.listdir(poppler_path):
+            print(f"[DEBUG]   - {f}")
+        
+        os.environ['PATH'] = poppler_path + os.pathsep + os.environ.get('PATH', '')
+        print(f"[DEBUG] ✓ Poppler added to PATH")
+    else:
+        print(f"[DEBUG] ✗ Poppler directory NOT found!")
+        print(f"[DEBUG] Available directories:")
+        for item in os.listdir(application_path):
+            print(f"[DEBUG]   - {item}")
+else:
+    print("[DEBUG] Running in development mode")
+
+print("="*60)
+
+'@
+        $mainContent = Get-Content "main.py" -Raw
+        $newContent = $hookCode + "`n" + $mainContent
+        $newContent | Out-File -FilePath "main.py" -Encoding UTF8
         
     - name: Build Debug EXE
       shell: pwsh
@@ -35,7 +75,7 @@ jobs:
         pyinstaller --name "PDF-Tool-Debug" `
           --onefile `
           --console `
-          --add-data "$env:POPPLER_PATH;poppler/Library/bin" `
+          --add-data "poppler_bin;poppler_bin" `
           --hidden-import PySide6.QtCore `
           --hidden-import PySide6.QtGui `
           --hidden-import PySide6.QtWidgets `
@@ -47,19 +87,7 @@ jobs:
           --collect-all PIL `
           main.py
         
-    - name: Verify build
-      shell: pwsh
-      run: |
-        if (Test-Path "dist/PDF-Tool-Debug.exe") {
-          Write-Host "✓ Debug executable created"
-        } else {
-          Write-Host "✗ Build failed!"
-          exit 1
-        }
-        
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v4
       with:
         name: PDF-Tool-Debug
         path: dist/PDF-Tool-Debug.exe
-        retention-days: 7
