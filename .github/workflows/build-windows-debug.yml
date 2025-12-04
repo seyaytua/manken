@@ -27,14 +27,39 @@ jobs:
         Expand-Archive poppler.zip -DestinationPath poppler
         $popplerBin = (Get-ChildItem -Path poppler -Filter bin -Recurse -Directory | Select-Object -First 1).FullName
         Write-Host "Poppler bin path: $popplerBin"
-        echo "POPPLER_PATH=$popplerBin" >> $env:GITHUB_ENV
+        Add-Content $env:GITHUB_ENV "POPPLER_PATH=$popplerBin"
         
     - name: Build Debug EXE
       shell: pwsh
       run: |
-        pyinstaller --onefile --console --name "PDF-Tool-Debug" --add-data "${env:POPPLER_PATH};poppler/Library/bin" --hidden-import=PySide6.QtCore --hidden-import=PySide6.QtGui --hidden-import=PySide6.QtWidgets --hidden-import=PyPDF2 --hidden-import=pdf2image --hidden-import=PIL --collect-all PySide6 --collect-all PIL --collect-all pdf2image main.py
+        pyinstaller --name "PDF-Tool-Debug" `
+          --onefile `
+          --console `
+          --add-data "$env:POPPLER_PATH;poppler/Library/bin" `
+          --hidden-import PySide6.QtCore `
+          --hidden-import PySide6.QtGui `
+          --hidden-import PySide6.QtWidgets `
+          --hidden-import PyPDF2 `
+          --hidden-import pdf2image `
+          --hidden-import PIL `
+          --collect-all PySide6 `
+          --collect-all pdf2image `
+          --collect-all PIL `
+          main.py
         
-    - uses: actions/upload-artifact@v4
+    - name: Verify build
+      shell: pwsh
+      run: |
+        if (Test-Path "dist/PDF-Tool-Debug.exe") {
+          Write-Host "✓ Debug executable created"
+        } else {
+          Write-Host "✗ Build failed!"
+          exit 1
+        }
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
       with:
         name: PDF-Tool-Debug
         path: dist/PDF-Tool-Debug.exe
+        retention-days: 7

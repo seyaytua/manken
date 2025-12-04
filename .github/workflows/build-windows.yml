@@ -30,86 +30,50 @@ jobs:
         Expand-Archive poppler.zip -DestinationPath poppler
         $popplerBin = (Get-ChildItem -Path poppler -Filter bin -Recurse -Directory | Select-Object -First 1).FullName
         Write-Host "Poppler bin path: $popplerBin"
-        echo "POPPLER_PATH=$popplerBin" >> $env:GITHUB_ENV
+        Add-Content $env:GITHUB_ENV "POPPLER_PATH=$popplerBin"
         
-    - name: Create PyInstaller spec file
+    - name: Build EXE with PyInstaller
       shell: pwsh
       run: |
-        @'
-# -*- mode: python ; coding: utf-8 -*-
-
-a = Analysis(
-    ['main.py'],
-    pathex=[],
-    binaries=[('$env:POPPLER_PATH', 'poppler/Library/bin')],
-    datas=[],
-    hiddenimports=[
-        'PySide6.QtCore',
-        'PySide6.QtGui',
-        'PySide6.QtWidgets',
-        'PyPDF2',
-        'pdf2image',
-        'PIL',
-        'PIL._imagingtk',
-        'PIL._tkinter_finder',
-        'io',
-        'pathlib',
-    ],
-    hookspath=[],
-    hooksconfig={},
-    runtime_hooks=[],
-    excludes=[],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=None,
-    noarchive=False,
-)
-
-pyz = PYZ(a.pure, a.zipped_data, cipher=None)
-
-exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    [],
-    name='PDF-Tool-Pro',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,
-    disable_windowed_traceback=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon=None,
-)
-'@ | Out-File -FilePath "main.spec" -Encoding UTF8
+        pyinstaller --name "PDF-Tool-Pro" `
+          --onefile `
+          --windowed `
+          --add-data "$env:POPPLER_PATH;poppler/Library/bin" `
+          --hidden-import PySide6.QtCore `
+          --hidden-import PySide6.QtGui `
+          --hidden-import PySide6.QtWidgets `
+          --hidden-import PySide6.QtPrintSupport `
+          --hidden-import PyPDF2 `
+          --hidden-import pdf2image `
+          --hidden-import pdf2image.exceptions `
+          --hidden-import PIL `
+          --hidden-import PIL.Image `
+          --hidden-import PIL.ImageQt `
+          --hidden-import PIL._imagingtk `
+          --hidden-import PIL._tkinter_finder `
+          --collect-all PySide6 `
+          --collect-all pdf2image `
+          --collect-all PIL `
+          main.py
         
-    - name: Build EXE with spec file
-      run: |
-        pyinstaller main.spec
-        
-    - name: Test executable
+    - name: Verify build
       shell: pwsh
       run: |
         if (Test-Path "dist/PDF-Tool-Pro.exe") {
-          Write-Host "Executable created successfully"
-          $fileSize = (Get-Item "dist/PDF-Tool-Pro.exe").Length / 1MB
-          Write-Host "File size: $([math]::Round($fileSize, 2)) MB"
+          Write-Host "✓ Executable created successfully"
+          $size = (Get-Item "dist/PDF-Tool-Pro.exe").Length / 1MB
+          Write-Host "File size: $([math]::Round($size, 2)) MB"
         } else {
-          Write-Host "Executable not found!"
+          Write-Host "✗ Build failed!"
           exit 1
         }
         
-    - uses: actions/upload-artifact@v4
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
       with:
         name: PDF-Tool-Windows
         path: dist/PDF-Tool-Pro.exe
+        retention-days: 30
         
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
