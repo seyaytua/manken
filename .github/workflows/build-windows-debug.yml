@@ -81,7 +81,24 @@ jobs:
           --collect-all PIL `
           main_debug.py
         
-        Move-Item "dist/main_debug.exe" "dist/PDF-Tool-Debug.exe" -Force
+    - name: Check what was built
+      shell: pwsh
+      run: |
+        Write-Host "Contents of dist folder:"
+        Get-ChildItem dist | ForEach-Object { Write-Host "  - $($_.Name)" }
+        
+    - name: Rename if needed
+      shell: pwsh
+      run: |
+        if (Test-Path "dist/PDF-Tool-Debug.exe") {
+          Write-Host "PDF-Tool-Debug.exe already exists"
+        } elseif (Test-Path "dist/main_debug.exe") {
+          Write-Host "Renaming main_debug.exe to PDF-Tool-Debug.exe"
+          Move-Item "dist/main_debug.exe" "dist/PDF-Tool-Debug.exe"
+        } else {
+          Write-Host "ERROR: No executable found!"
+          exit 1
+        }
         
     - uses: actions/upload-artifact@v4
       with:

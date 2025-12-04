@@ -66,7 +66,24 @@ jobs:
           --collect-all PIL `
           main_with_hook.py
         
-        Move-Item "dist/main_with_hook.exe" "dist/PDF-Tool-Pro.exe" -Force
+    - name: Check what was built
+      shell: pwsh
+      run: |
+        Write-Host "Contents of dist folder:"
+        Get-ChildItem dist | ForEach-Object { Write-Host "  - $($_.Name)" }
+        
+    - name: Rename if needed
+      shell: pwsh
+      run: |
+        if (Test-Path "dist/PDF-Tool-Pro.exe") {
+          Write-Host "PDF-Tool-Pro.exe already exists"
+        } elseif (Test-Path "dist/main_with_hook.exe") {
+          Write-Host "Renaming main_with_hook.exe to PDF-Tool-Pro.exe"
+          Move-Item "dist/main_with_hook.exe" "dist/PDF-Tool-Pro.exe"
+        } else {
+          Write-Host "ERROR: No executable found!"
+          exit 1
+        }
         
     - name: Verify build
       shell: pwsh
@@ -75,7 +92,7 @@ jobs:
           $size = (Get-Item "dist/PDF-Tool-Pro.exe").Length / 1MB
           Write-Host "Build successful - Size: $([math]::Round($size, 2)) MB"
         } else {
-          Write-Host "Build failed"
+          Write-Host "Build failed - PDF-Tool-Pro.exe not found"
           exit 1
         }
         
