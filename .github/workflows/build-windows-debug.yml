@@ -29,56 +29,59 @@ jobs:
         New-Item -ItemType Directory -Force -Path "poppler_bin"
         Copy-Item -Path "$($popplerBin.FullName)\*" -Destination "poppler_bin" -Force
         
-    - name: Create modified main.py
+    - name: Create debug hook script
       shell: pwsh
       run: |
-        # オリジナルをバックアップ
-        Copy-Item "main.py" "main_backup.py"
-        
-        # デバッグコードを作成
-        $debugCode = @"
+        $debugHook = @'
 import os
 import sys
 
-print('='*60)
-print('[DEBUG] Starting application...')
+print("=" * 60)
+print("[DEBUG] Application starting...")
 
 if getattr(sys, 'frozen', False):
     application_path = sys._MEIPASS
-    print(f'[DEBUG] Running as EXE, temp path: {application_path}')
+    print(f"[DEBUG] EXE mode - Temp path: {application_path}")
     
     poppler_path = os.path.join(application_path, 'poppler_bin')
-    print(f'[DEBUG] Looking for Poppler at: {poppler_path}')
+    print(f"[DEBUG] Checking Poppler at: {poppler_path}")
     
     if os.path.exists(poppler_path):
-        print('[DEBUG] Poppler directory found!')
-        print('[DEBUG] Files in poppler_bin:')
-        for f in os.listdir(poppler_path):
-            print(f'[DEBUG]   - {f}')
+        print("[DEBUG] SUCCESS: Poppler directory found!")
+        files = os.listdir(poppler_path)
+        print(f"[DEBUG] Found {len(files)} files in poppler_bin:")
+        for f in files[:10]:
+            print(f"[DEBUG]   - {f}")
+        if len(files) > 10:
+            print(f"[DEBUG]   ... and {len(files) - 10} more files")
         
         os.environ['PATH'] = poppler_path + os.pathsep + os.environ.get('PATH', '')
-        print('[DEBUG] Poppler added to PATH')
+        print("[DEBUG] SUCCESS: Poppler added to PATH")
     else:
-        print('[DEBUG] ERROR: Poppler directory NOT found!')
-        print('[DEBUG] Available directories:')
+        print("[DEBUG] ERROR: Poppler directory NOT FOUND!")
+        print("[DEBUG] Directories in temp folder:")
         try:
             for item in os.listdir(application_path):
-                print(f'[DEBUG]   - {item}')
+                item_path = os.path.join(application_path, item)
+                if os.path.isdir(item_path):
+                    print(f"[DEBUG]   DIR: {item}")
+                else:
+                    print(f"[DEBUG]   FILE: {item}")
         except Exception as e:
-            print(f'[DEBUG] Error listing directory: {e}')
+            print(f"[DEBUG] Error listing: {e}")
 else:
-    print('[DEBUG] Running in development mode')
+    print("[DEBUG] Development mode")
 
-print('='*60)
-
-"@
+print("=" * 60)
+'@
+        $debugHook | Out-File -FilePath "debug_hook.py" -Encoding UTF8
         
-        # main.pyの内容を読み込んで結合
-        $mainContent = Get-Content "main.py" -Raw -Encoding UTF8
-        $newContent = $debugCode + "`n" + $mainContent
-        
-        # 新しいmain.pyを書き出し
-        $newContent | Out-File -FilePath "main.py" -Encoding UTF8 -NoNewline
+    - name: Prepend debug hook to main.py
+      shell: pwsh
+      run: |
+        $hook = Get-Content "debug_hook.py" -Raw
+        $main = Get-Content "main.py" -Raw
+        ($hook + "`n`n" + $main) | Out-File -FilePath "main_debug.py" -Encoding UTF8
         
     - name: Build Debug EXE
       shell: pwsh
@@ -96,12 +99,9 @@ print('='*60)
           --collect-all PySide6 `
           --collect-all pdf2image `
           --collect-all PIL `
-          main.py
+          main_debug.py
         
-    - name: Restore original main.py
-      shell: pwsh
-      run: |
-        Copy-Item "main_backup.py" "main.py" -Force
+        Move-Item "dist/main_debug.exe" "dist/PDF-Tool-Debug.exe" -Force
         
     - uses: actions/upload-artifact@v4
       with:
