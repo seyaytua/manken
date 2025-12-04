@@ -1,0 +1,53 @@
+name: Build Windows EXE (Debug)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+        
+    - name: Setup Poppler
+      shell: pwsh
+      run: |
+        Invoke-WebRequest -Uri "https://github.com/oschwartz10612/poppler-windows/releases/download/v23.11.0-0/Release-23.11.0-0.zip" -OutFile poppler.zip
+        Expand-Archive poppler.zip -DestinationPath poppler
+        $popplerBin = (Get-ChildItem -Path poppler -Filter bin -Recurse -Directory | Select-Object -First 1).FullName
+        echo "POPPLER_PATH=$popplerBin" >> $env:GITHUB_ENV
+        
+    - name: Build Debug EXE
+      shell: pwsh
+      run: |
+        # デバッグ用：コンソール表示あり
+        pyinstaller --onefile `
+          --console `
+          --name "PDF-Tool-Debug" `
+          --add-data "$env:POPPLER_PATH;poppler/Library/bin" `
+          --hidden-import=PySide6.QtCore `
+          --hidden-import=PySide6.QtGui `
+          --hidden-import=PySide6.QtWidgets `
+          --hidden-import=PyPDF2 `
+          --hidden-import=pdf2image `
+          --hidden-import=PIL `
+          --collect-all PySide6 `
+          --collect-all PIL `
+          --collect-all pdf2image `
+          main.py
+        
+    - uses: actions/upload-artifact@v4
+      with:
+        name: PDF-Tool-Debug
+        path: dist/PDF-Tool-Debug.exe
