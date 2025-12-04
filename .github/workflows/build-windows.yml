@@ -26,24 +26,17 @@ jobs:
     - name: Setup Poppler
       shell: pwsh
       run: |
-        # Popplerをダウンロード
         Invoke-WebRequest -Uri "https://github.com/oschwartz10612/poppler-windows/releases/download/v23.11.0-0/Release-23.11.0-0.zip" -OutFile poppler.zip
         Expand-Archive poppler.zip -DestinationPath poppler
-        
-        # binフォルダのパスを取得
         $popplerBin = (Get-ChildItem -Path poppler -Filter bin -Recurse -Directory | Select-Object -First 1).FullName
         Write-Host "Poppler bin path: $popplerBin"
-        
-        # 環境変数に設定
         echo "POPPLER_PATH=$popplerBin" >> $env:GITHUB_ENV
         
     - name: Create PyInstaller spec file
       shell: pwsh
       run: |
-        $specContent = @"
+        @'
 # -*- mode: python ; coding: utf-8 -*-
-
-block_cipher = None
 
 a = Analysis(
     ['main.py'],
@@ -68,11 +61,11 @@ a = Analysis(
     excludes=[],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
-    cipher=block_cipher,
+    cipher=None,
     noarchive=False,
 )
 
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure, a.zipped_data, cipher=None)
 
 exe = EXE(
     pyz,
@@ -95,23 +88,21 @@ exe = EXE(
     entitlements_file=None,
     icon=None,
 )
-"@
-        $specContent | Out-File -FilePath "main.spec" -Encoding UTF8
+'@ | Out-File -FilePath "main.spec" -Encoding UTF8
         
     - name: Build EXE with spec file
       run: |
         pyinstaller main.spec
         
-    - name: Test executable (dry run)
+    - name: Test executable
       shell: pwsh
       run: |
-        Write-Host "Checking if executable was created..."
         if (Test-Path "dist/PDF-Tool-Pro.exe") {
-          Write-Host "✓ Executable created successfully"
+          Write-Host "Executable created successfully"
           $fileSize = (Get-Item "dist/PDF-Tool-Pro.exe").Length / 1MB
           Write-Host "File size: $([math]::Round($fileSize, 2)) MB"
         } else {
-          Write-Host "✗ Executable not found!"
+          Write-Host "Executable not found!"
           exit 1
         }
         
